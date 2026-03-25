@@ -16,43 +16,37 @@
     <!-- 外部資源：Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // --- 本機儲存邏輯 (取代 Firebase) ---
-        
-        // 核心狀態管理
+        /**
+         * 核心邏輯區 - 使用 LocalStorage 取代 Firebase
+         */
         let selectedProduct = "鮭魚";
         let currentFilter = "全部";
         let allRecords = JSON.parse(localStorage.getItem('market_records')) || [];
         let dynamicCategories = JSON.parse(localStorage.getItem('market_categories')) || ["鮭魚"];
 
-        // 儲存資料到本機的輔助函式
+        // 同步資料至本機儲存空間
         function syncToLocalStorage() {
             localStorage.setItem('market_records', JSON.stringify(allRecords));
             localStorage.setItem('market_categories', JSON.stringify(dynamicCategories));
         }
 
-        // --- 核心 UI 渲染函式 ---
-
-        // 渲染產品按鈕區域 (固定四格邏輯)
+        /**
+         * UI 渲染函式
+         */
+        
+        // 渲染產品區 (固定 4 格邏輯)
         window.renderProductSelectionUI = function() {
             const container = document.getElementById('product-buttons-container');
             if (!container) return;
             container.innerHTML = '';
             
-            // 第一格：固定產品 1
-            if (dynamicCategories.length >= 1) {
-                appendProductButton(container, dynamicCategories[0]);
-            } else {
-                appendEmptySlot(container);
+            // 格 1 & 2：固定顯示前兩個產品
+            for(let i=0; i<2; i++) {
+                if (dynamicCategories[i]) appendProductButton(container, dynamicCategories[i]);
+                else appendEmptySlot(container);
             }
 
-            // 第二格：固定產品 2
-            if (dynamicCategories.length >= 2) {
-                appendProductButton(container, dynamicCategories[1]);
-            } else {
-                appendEmptySlot(container);
-            }
-
-            // 第三格：邏輯格 (如果是 3 個則顯示按鈕，超過 3 個則顯示下拉選單)
+            // 格 3：邏輯格 (如果是第 3 個則顯示按鈕，超過 3 個則變成下拉選單)
             if (dynamicCategories.length === 3) {
                 appendProductButton(container, dynamicCategories[2]);
             } else if (dynamicCategories.length > 3) {
@@ -61,7 +55,7 @@
                 appendEmptySlot(container);
             }
 
-            // 第四格：固定「➕ 新增」按鈕
+            // 格 4：固定「➕ 新增」按鈕
             const addBtn = document.createElement('button');
             addBtn.onclick = () => document.getElementById('custom_product_div').classList.toggle('hidden');
             addBtn.className = "py-3 px-1 text-lg font-bold rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 text-slate-500 active:scale-95 transition-transform shadow-sm h-[60px]";
@@ -83,29 +77,21 @@
         function appendProductDropdown(container, items) {
             const select = document.createElement('select');
             const isAnyActive = items.includes(selectedProduct);
-            
             select.className = `py-3 px-1 text-lg font-bold rounded-xl border-2 shadow-sm h-[60px] outline-none appearance-none text-center leading-tight ${
                 isAnyActive ? 'border-teal-600 bg-teal-600 text-white' : 'border-teal-200 bg-white text-teal-700'
             }`;
-            
             const placeholder = document.createElement('option');
             placeholder.text = isAnyActive ? selectedProduct : "更多▼";
             placeholder.value = isAnyActive ? selectedProduct : "";
             placeholder.disabled = true;
             placeholder.selected = true;
             select.appendChild(placeholder);
-
             items.forEach(item => {
                 const opt = document.createElement('option');
-                opt.value = item;
-                opt.text = item;
+                opt.value = item; opt.text = item;
                 select.appendChild(opt);
             });
-
-            select.onchange = (e) => {
-                if (e.target.value) window.selectProduct(e.target.value);
-            };
-
+            select.onchange = (e) => { if (e.target.value) window.selectProduct(e.target.value); };
             container.appendChild(select);
         }
 
@@ -119,7 +105,6 @@
             const container = document.getElementById('filter-buttons-container');
             if (!container) return;
             container.innerHTML = '';
-
             const filters = ["全部", ...dynamicCategories];
             filters.forEach(f => {
                 const isActive = currentFilter === f;
@@ -137,56 +122,35 @@
             const listContainer = document.getElementById('records-list');
             if (!listContainer) return;
             listContainer.innerHTML = '';
-            
-            const filteredDocs = currentFilter === "全部" 
-                ? allRecords 
-                : allRecords.filter(d => d.productName === currentFilter);
-
+            const filteredDocs = currentFilter === "全部" ? allRecords : allRecords.filter(d => d.productName === currentFilter);
             if (filteredDocs.length === 0) {
                 listContainer.innerHTML = `<div class="text-center p-12 text-slate-400 text-xl font-bold">目前沒有歷史紀錄</div>`;
                 return;
             }
-
-            // 按時間倒序排列
             const sortedRecords = [...filteredDocs].sort((a, b) => b.timestamp - a.timestamp);
-
             sortedRecords.forEach(data => {
                 const card = document.createElement('div');
                 card.className = "bg-white p-4 rounded-2xl shadow-sm border-l-4 border-amber-200 flex justify-between items-center mb-3";
-                
                 const totalText = data.totalPrice ? `<span class="text-slate-600 font-normal">，總共: </span><span class="text-emerald-700 font-black">$${data.totalPrice}</span><span class="text-slate-600 font-normal"> 元</span>` : '';
-                const unitPriceLine = (data.priceKg || data.priceTj) ? `<div class="text-lg text-slate-600 mt-1 font-bold">單價：賣場: <span class="text-teal-700">$${data.priceKg || '--'}/kg</span> | 市場: <span class="text-amber-800">$${data.priceTj || '--'}/台斤</span></div>` : '';
+                const unitPriceLine = (data.priceKg || data.priceTj) ? `<div class="text-lg text-slate-600 mt-1 font-bold">單價：賣場: <span class="text-teal-700">$${data.priceKg || '--'}/kg</span> | 市場: <span class="text-orange-600">$${data.priceTj || '--'}/台斤</span></div>` : '';
                 const footerInfo = data.remark ? `${data.remark} || ${data.displayTime || ''}` : `${data.displayTime || ''}`;
-                
-                card.innerHTML = `
-                    <div class="flex-1">
-                        <div class="text-xl font-black text-slate-800 leading-tight">${data.productName}${totalText}</div>
-                        ${unitPriceLine}
-                        <div class="text-xs text-slate-400 mt-1 font-medium">${footerInfo}</div>
-                    </div>
-                    <button onclick="window.deleteRecord('${data.id}')" class="bg-rose-50 text-rose-400 p-3 rounded-xl active:bg-rose-100 ml-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewbox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                    </button>
-                `;
+                card.innerHTML = `<div class="flex-1"><div class="text-xl font-black text-slate-800 leading-tight">${data.productName}${totalText}</div>${unitPriceLine}<div class="text-xs text-slate-400 mt-1 font-medium">${footerInfo}</div></div><button onclick="window.deleteRecord('${data.id}')" class="bg-rose-50 text-rose-400 p-3 rounded-xl active:bg-rose-100 ml-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewbox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>`;
                 listContainer.appendChild(card);
             });
         };
 
-        // --- 功能控制 ---
-
+        /**
+         * 功能控制
+         */
         window.showPage = function(pageId) {
             document.getElementById('page-converter').classList.add('hidden');
             document.getElementById('page-history').classList.add('hidden');
             document.getElementById('page-' + pageId).classList.remove('hidden');
-            
             document.querySelectorAll('.nav-btn').forEach(btn => {
                 btn.classList.remove('bg-slate-700', 'text-white', 'shadow-md');
                 btn.classList.add('bg-slate-100', 'text-slate-500');
             });
             document.getElementById('nav-' + pageId).classList.add('bg-slate-700', 'text-white', 'shadow-md');
-            
             window.scrollTo(0, 0);
             if (pageId === 'history') window.renderRecords();
         };
@@ -218,8 +182,6 @@
             window.renderRecords();
         };
 
-        // --- 資料操作 (LocalStorage 版) ---
-
         window.addNewProductAction = function() {
             const input = document.getElementById('custom_product_input');
             const newName = input.value.trim();
@@ -241,27 +203,17 @@
             const ptj = document.getElementById('price_tj').value;
             const remark = document.getElementById('price_remark').value;
             const total = document.getElementById('price_total').value;
-            
             if (!pkg && !ptj && !total) { alertBox("請先輸入金額或單價"); return; }
-            
             const now = new Date();
             const timeStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
-            
             const newRecord = {
                 id: Date.now().toString(),
                 productName: selectedProduct,
-                priceKg: pkg,
-                priceTj: ptj,
-                totalPrice: total,
-                remark: remark,
-                displayTime: timeStr,
-                timestamp: Date.now()
+                priceKg: pkg, priceTj: ptj, totalPrice: total, remark: remark,
+                displayTime: timeStr, timestamp: Date.now()
             };
-            
             allRecords.push(newRecord);
             syncToLocalStorage();
-            
-            // 清空輸入
             document.getElementById('price_kg').value = ''; 
             document.getElementById('price_tj').value = '';
             document.getElementById('price_remark').value = ''; 
@@ -282,25 +234,31 @@
             setTimeout(() => el.classList.add('hidden'), 2000);
         }
 
-        // --- 初始化啟動 ---
         document.addEventListener('DOMContentLoaded', () => {
             window.renderProductSelectionUI();
             window.renderFilterUI();
         });
     </script>
     <style>
-        body { font-family: -apple-system, system-ui, BlinkMacSystemFont, sans-serif; background-color: #f8fafc; padding-bottom: 240px; color: #1e293b; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
-        .input-box { font-size: 3rem; height: 100px; text-align: center; border-width: 5px; font-weight: 800; width: 100%; border-radius: 1rem; -webkit-appearance: none; }
-        .input-box-tall { height: 100%; min-height: 200px; }
-        .unit-kg { color: #0284c7; font-weight: 900; }
-        .unit-tj { color: #ea580c; font-weight: 900; }
+        body { font-family: -apple-system, system-ui, BlinkMacSystemFont, sans-serif; background-color: #f1f5f9; padding-bottom: 240px; color: #1e293b; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        
+        /* 對齊關鍵：固定標籤寬度 */
+        .side-label { font-size: 1.15rem; font-weight: 900; width: 110px; flex-shrink: 0; text-align: right; margin-right: 12px; line-height: 1.3; }
+        
+        /* 特大輸入框 */
+        .input-box { font-size: 2.8rem; height: 85px; text-align: center; border-width: 4px; font-weight: 800; width: 100%; border-radius: 1rem; -webkit-appearance: none; flex-grow: 1; }
+        
+        /* 單位顯色 */
+        .unit-kg { color: #0284c7; }
+        .unit-tj { color: #ea580c; }
+        
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         select { -webkit-appearance: none; }
         .nav-btn { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
 </head>
 <body class="p-2">
-    <!-- 提示框 -->
+    <!-- 提示彈窗 -->
     <div id="toast" class="fixed top-3 left-1/2 transform -translate-x-1/2 bg-slate-800/90 text-white px-6 py-3 rounded-full text-xl z-50 hidden shadow-2xl text-center">提示</div>
 
     <div class="max-w-2xl mx-auto space-y-3">
@@ -310,12 +268,10 @@
                 <h1 class="text-xl font-black">💰 金額換算</h1>
             </div>
 
-            <!-- 產品選擇區：固定四格 -->
-            <div class="bg-white p-3 rounded-2xl shadow-sm space-y-2">
+            <!-- 產品區卡片 -->
+            <div class="bg-white p-2 rounded-2xl shadow-sm space-y-2 border-b-2 border-slate-200">
                 <div id="product-buttons-container" class="grid grid-cols-4 gap-2"></div>
-                
-                <!-- 新增產品輸入區 -->
-                <div id="custom_product_div" class="hidden pt-3 border-t border-slate-100">
+                <div id="custom_product_div" class="hidden pt-3 border-t border-slate-100 px-1">
                     <div class="flex gap-2 items-center">
                         <input type="text" id="custom_product_input" class="flex-1 p-3 text-lg border-2 border-slate-200 rounded-xl focus:border-teal-400 outline-none bg-slate-50" placeholder="產品名稱">
                         <button onclick="addNewProductAction()" class="bg-teal-600 text-white w-20 py-3 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-transform">加入</button>
@@ -323,45 +279,43 @@
                 </div>
             </div>
 
-            <!-- 輸入與換算核心區 -->
-            <div class="bg-white p-4 rounded-3xl shadow-sm border-t-4 border-teal-500">
-                <div class="flex gap-3">
-                    <!-- 左側：總共花多少錢 (等高垂直撐滿) -->
-                    <div class="w-1/3 flex flex-col text-center">
-                        <label class="text-lg font-black text-slate-800 mb-2 leading-tight">總共花多少錢</label>
-                        <div class="relative flex-1 flex flex-col">
-                            <input type="number" id="price_total" inputmode="decimal" class="input-box input-box-tall border-slate-200 bg-slate-50 focus:border-slate-800 outline-none" placeholder="0">
-                            <span class="absolute right-2 bottom-4 text-base text-slate-400 font-bold">元</span>
-                        </div>
-                    </div>
-                    
-                    <div class="w-px bg-slate-200"></div>
-
-                    <!-- 右側：單價價格 (加強顏色) -->
-                    <div class="flex-1 space-y-4">
-                        <div>
-                            <label class="block text-xl font-black text-teal-800 mb-1">賣場 <span class="unit-kg">每公斤</span> 價格</label>
-                            <div class="relative">
-                                <input type="number" id="price_kg" inputmode="decimal" class="input-box border-sky-100 bg-sky-50 focus:border-sky-300 outline-none" placeholder="0" oninput="window.calcPrice('kg')">
-                                <span class="absolute right-2 bottom-4 text-base text-sky-400 font-bold">元</span>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xl font-black text-amber-900 mb-1">市場 <span class="unit-tj">每台斤</span> 價格</label>
-                            <div class="relative">
-                                <input type="number" id="price_tj" inputmode="decimal" class="input-box border-amber-100 bg-amber-50 focus:border-amber-300 outline-none" placeholder="0" oninput="window.calcPrice('tj')">
-                                <span class="absolute right-2 bottom-4 text-base text-sky-400 font-bold">元</span>
-                            </div>
-                        </div>
+            <!-- 第一框：單價換算區 -->
+            <div class="bg-white p-2 py-4 rounded-3xl shadow-sm border-t-4 border-sky-500 space-y-4">
+                <div class="flex items-center">
+                    <label class="side-label">賣場<br><span class="unit-kg">每公斤</span></label>
+                    <div class="relative flex-grow">
+                        <input type="number" id="price_kg" inputmode="decimal" class="input-box border-sky-100 bg-sky-50 focus:border-sky-300 outline-none shadow-sm" placeholder="0" oninput="window.calcPrice('kg')">
+                        <span class="absolute right-3 bottom-3 text-base text-sky-400 font-bold">元</span>
                     </div>
                 </div>
-                
-                <!-- 備註與儲存 (同一行) -->
-                <div class="mt-4 pt-4 border-t-2 border-dashed border-slate-100 flex gap-2 items-stretch h-[65px]">
-                    <div class="flex-1">
-                        <input type="text" id="price_remark" class="w-full p-4 rounded-xl border-2 border-slate-200 bg-slate-50 outline-none shadow-inner text-lg" placeholder="寫備註 (例如：全聯)">
+                <div class="flex items-center">
+                    <label class="side-label">市場<br><span class="unit-tj">每台斤</span></label>
+                    <div class="relative flex-grow">
+                        <input type="number" id="price_tj" inputmode="decimal" class="input-box border-amber-100 bg-amber-50 focus:border-amber-300 outline-none shadow-sm" placeholder="0" oninput="window.calcPrice('tj')">
+                        <span class="absolute right-3 bottom-3 text-base text-amber-400 font-bold">元</span>
                     </div>
-                    <button onclick="window.saveCurrentRecord()" class="bg-orange-600 text-white px-6 py-4 rounded-xl text-2xl font-black shadow-lg active:scale-95 transition-transform flex items-center justify-center min-w-[120px]">
+                </div>
+            </div>
+
+            <!-- 第二框：總共花多少錢區 -->
+            <div class="bg-white p-2 py-4 rounded-3xl shadow-sm border-t-4 border-slate-500">
+                <div class="flex items-center">
+                    <label class="side-label">總共花<br>多少錢</label>
+                    <div class="relative flex-grow">
+                        <input type="number" id="price_total" inputmode="decimal" class="input-box border-slate-100 bg-slate-50 focus:border-slate-800 outline-none shadow-sm" placeholder="0">
+                        <span class="absolute right-3 bottom-3 text-lg text-slate-400 font-bold">元</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 第三框：備註與儲存區 -->
+            <div class="bg-white p-2 py-4 rounded-3xl shadow-sm border-t-4 border-orange-500 flex items-center min-h-[105px]">
+                <div class="side-label">
+                    <label>寫點<br>備註</label>
+                </div>
+                <div class="flex-grow flex gap-2 pr-2">
+                    <input type="text" id="price_remark" class="flex-grow p-4 h-[85px] rounded-xl border-2 border-slate-200 bg-slate-50 outline-none shadow-inner text-xl font-bold" placeholder="備註...">
+                    <button onclick="window.saveCurrentRecord()" class="bg-orange-600 text-white px-4 h-[85px] rounded-xl text-xl font-black shadow-lg active:scale-95 transition-transform flex items-center justify-center min-w-[100px]">
                         💾 儲存
                     </button>
                 </div>
@@ -374,27 +328,23 @@
             <div class="bg-amber-600 py-2 px-4 rounded-xl text-white text-center shadow-sm">
                 <h1 class="text-xl font-black">📋 歷史紀錄</h1>
             </div>
-            <!-- 動態篩選區 -->
             <div id="filter-buttons-container" class="flex flex-wrap gap-2 px-1"></div>
-            <!-- 紀錄清單 -->
             <div id="records-list" class="space-y-3 pb-8"></div>
             <div class="h-20"></div>
         </div>
     </div>
 
     <!-- 底部導覽列 -->
-    <div class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-slate-100 p-3 flex gap-3 shadow-2xl z-40">
+    <div class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-slate-200 p-3 flex gap-3 shadow-2xl z-40">
         <button id="nav-converter" onclick="showPage('converter')" class="nav-btn flex-1 py-5 rounded-xl text-xl font-black bg-slate-700 text-white shadow-md active:scale-95">⚖️ 金額換算</button>
         <button id="nav-history" onclick="showPage('history')" class="nav-btn flex-1 py-5 rounded-xl text-xl font-black bg-slate-100 text-slate-500 active:scale-95">🔎 歷史紀錄</button>
     </div>
 
-    <!-- PWA 註冊邏輯 -->
+    <!-- PWA 註冊腳本 -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').then(reg => {
-                    console.log('SW 註冊成功');
-                }).catch(err => console.log('SW 註冊失敗', err));
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW Fail', err));
             });
         }
     </script>
