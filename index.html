@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>買菜記帳換算器</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" type="image/png" href="icon.png">
+    <meta name="theme-color" content="#0f766e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'market-price-helper';
+
+        let selectedProduct = "鮭魚";
+        let currentFilter = "全部";
+        let unsubscribeRecords = null;
+        let unsubscribeCats = null;
+        let allRecords = [];
+        let dynamicCategories = ["鮭魚", "透抽"];
+
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) { console.error("Firebase Auth Error:", error); }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                startListeningCategories(user);
+                startListeningRecords(user);
+            }
+        });
+
+        function startListeningCategories(user) {
+            const catsCol = collection(db, 'artifacts', appId, 'public', 'data', 'priceCategories');
+            if (unsubscribeCats) unsubscribeCats();
+            unsubscribeCats = onSnapshot(catsCol, (snapshot) => {
+                const fetchedCats = snapshot.docs.map(d => d.data().name);
+                const combined = ["鮭魚", "透抽", ...fetchedCats];
+                dynamicCategories = [...new Set(combined)];
+                renderProductSelectionUI();
+                renderFilterUI();
+            });
+        }
+
+        function startListeningRecords(user) {
+            const recordsCol = collection(db, 'artifacts', appId, 'public', 'data', 'priceRecords');
+            if (unsubscribeRecords) unsubscribeRecords();
+            unsubscribeRecords = onSnapshot(recordsCol, (snapshot) => {
+                allRecords = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                allRecords.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                renderRecords();
+            });
+        }
+
+        function renderProductSelectionUI() {
+            const container = document.getElementById('product-buttons-container');
+            if (!container) return;
+            container.innerHTML = '';
+            dynamicCategories.forEach(cat => {
+                const isActive = selectedProduct === cat;
+                const btn = document.createElement('button');
+                btn.onclick = () => window.selectProduct(cat);
+                btn.className = `product-btn py-4 px-2 text-xl font-bold rounded-2xl border-4 transition-transform active:scale-95 shadow-sm ${
+                    isActive ? 'border-teal-600 bg-teal-600 text-white' : 'border-teal-200 bg-white text-teal-700'
+                }`;
+                btn.innerText = cat;
+                container.appendChild(btn);
+            });
+            const addBtn = document.createElement('button');
+            addBtn.onclick = () => document.getElementById('custom_product_div').classList.toggle('hidden');
+            addBtn.className = "py-4 px-2 text-xl font-bold rounded-2xl border-4 border-dashed border-slate-300 bg-slate-50 text-slate-500 active:scale-95 transition-transform shadow-sm";
+            addBtn.innerText = "➕ 新增產品";
+            container.appendChild(addBtn);
+        }
+
+        function renderFilterUI() {
+            const container = document.getElementById('filter-buttons-container');
+            if (!container) return;
+            container.innerHTML = '';
+            const filters = ["全部", ...dynamicCategories];
+            filters.forEach(f => {
+                const isActive = currentFilter === f;
+                const btn = document.createElement('button');
+                btn.onclick = () => window.setFilter(f);
+                btn.className = `filter-btn px-6 py-3 text-lg font-bold rounded-full border-2 transition-all ${
+                    isActive ? 'border-amber-400 bg-amber-400 text-amber-950 shadow-sm' : 'border-slate-200 bg-white text-slate-600'
+                }`;
+                btn.innerText = f;
+                container.appendChild(btn);
+            });
+        }
+
+        function renderRecords() {
+            const listContainer = document.getElementById('records-list');
+            if (!listContainer) return;
+            listContainer.innerHTML = '';
+            const filteredDocs = currentFilter === "全部" ? allRecords : allRecords.filter(d => d.productName === currentFilter);
+            if (filteredDocs.length === 0) {
+                listContainer.innerHTML = `<div class="text-center p-12 text-slate-400 text-2xl font-bold">目前沒有「${currentFilter}」的紀錄</div>`;
+                return;
+            }
+            filteredDocs.forEach(data => {
+                const card = document.createElement('div');
+                card.className = "bg-white p-6 rounded-3xl shadow-sm border-l-8 border-amber-200 flex justify-between items-center mb-4";
+                const totalText = data.totalPrice ? `<span class="text-slate-600 font-normal">，總共: </span><span class="text-emerald-700 font-black">$${data.totalPrice}</span><span class="text-slate-600 font-normal"> 元</span>` : '';
+                const unitPriceLine = (data.priceKg || data.priceTj) ? `<div class="text-xl text-slate-600 mt-2 font-bold">單價：賣場: <span class="text-teal-700">$${data.priceKg || '--'}/kg</span> | 市場: <span class="text-amber-800">$${data.priceTj || '--'}/台斤</span></div>` : '';
+                const footerInfo = data.remark ? `${data.remark} || ${data.displayTime || ''}` : `${data.displayTime || ''}`;
+                card.innerHTML = `<div class="flex-1"><div class="text-3xl font-black text-slate-800 leading-tight">${data.productName}${totalText}</div>${unitPriceLine}<div class="text-base text-slate-400 mt-2 font-medium">${footerInfo}</div></div><button onclick="window.deleteRecord('${data.id}')" class="bg-rose-50 text-rose-400 p-5 rounded-2xl active:bg-rose-100 ml-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewbox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>`;
+                listContainer.appendChild(card);
+            });
+        }
+
+        window.showPage = function(pageId) {
+            document.getElementById('page-converter').classList.add('hidden');
+            document.getElementById('page-history').classList.add('hidden');
+            document.getElementById('page-' + pageId).classList.remove('hidden');
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('bg-slate-700', 'text-white', 'shadow-md');
+                btn.classList.add('bg-slate-100', 'text-slate-500');
+            });
+            document.getElementById('nav-' + pageId).classList.add('bg-slate-700', 'text-white', 'shadow-md');
+            window.scrollTo(0, 0);
+            if (pageId === 'history') renderRecords();
+        }
+
+        window.selectProduct = function(name) {
+            selectedProduct = name;
+            renderProductSelectionUI();
+            document.getElementById('custom_product_div').classList.add('hidden');
+        }
+
+        window.addNewProductAction = async function() {
+            const input = document.getElementById('custom_product_input');
+            const newName = input.value.trim();
+            if (!newName) return;
+            try {
+                const catsCol = collection(db, 'artifacts', appId, 'public', 'data', 'priceCategories');
+                await addDoc(catsCol, { name: newName, createdAt: serverTimestamp() });
+                input.value = '';
+                selectedProduct = newName;
+                document.getElementById('custom_product_div').classList.add('hidden');
+                alertBox("已新增產品按鈕！");
+            } catch (e) { alertBox("新增失敗"); }
+        }
+
+        window.calcPrice = function(type) {
+            const pkg = document.getElementById('price_kg');
+            const ptj = document.getElementById('price_tj');
+            if (type === 'kg') {
+                const val = parseFloat(pkg.value);
+                if (!isNaN(val)) ptj.value = Math.round(val * 0.6);
+                else ptj.value = '';
+            } else {
+                const val = parseFloat(ptj.value);
+                if (!isNaN(val)) pkg.value = Math.round(val / 0.6);
+                else pkg.value = '';
+            }
+        }
+
+        window.saveCurrentRecord = async function() {
+            if (!auth.currentUser) return;
+            const pkg = document.getElementById('price_kg').value;
+            const ptj = document.getElementById('price_tj').value;
+            const remark = document.getElementById('price_remark').value;
+            const total = document.getElementById('price_total').value;
+            if (!pkg && !ptj && !total) { alertBox("請先輸入金額"); return; }
+            try {
+                const now = new Date();
+                const timeStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'priceRecords'), {
+                    productName: selectedProduct, priceKg: pkg, priceTj: ptj, totalPrice: total, remark: remark,
+                    createdAt: serverTimestamp(), displayTime: timeStr, userId: auth.currentUser.uid
+                });
+                document.getElementById('price_kg').value = ''; document.getElementById('price_tj').value = '';
+                document.getElementById('price_remark').value = ''; document.getElementById('price_total').value = '';
+                alertBox("已存好囉！");
+            } catch (e) { alertBox("儲存失敗"); }
+        }
+
+        window.deleteRecord = async function(id) {
+            if (!window.confirm("確定要刪除這筆紀錄嗎？")) return;
+            try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'priceRecords', id)); } catch (e) { alertBox("刪除失敗"); }
+        }
+
+        window.setFilter = function(filterName) {
+            currentFilter = filterName;
+            renderFilterUI();
+            renderRecords();
+        }
+
+        function alertBox(msg) {
+            const el = document.getElementById('toast');
+            el.innerText = msg; el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 2000);
+        }
+
+        initAuth();
+    </script>
+    <style>
+        body { font-family: -apple-system, sans-serif; background-color: #f8fafc; padding-bottom: 280px; color: #1e293b; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        .huge-text { font-size: 2.2rem; font-weight: 900; }
+        .label-text { font-size: 1.6rem; font-weight: bold; }
+        .input-box { font-size: 2.8rem; height: 90px; text-align: center; border-width: 5px; }
+        .remark-box { font-size: 1.8rem; border-width: 3px; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .nav-btn { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="p-3">
+    <div id="toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-slate-800/90 text-white px-8 py-4 rounded-full text-2xl z-50 hidden shadow-2xl">提示</div>
+
+    <div class="max-w-2xl mx-auto">
+        <div id="page-converter" class="space-y-4">
+            <div class="bg-teal-700 p-5 rounded-3xl text-white text-center shadow-sm">
+                <h1 class="huge-text">💰 買菜記帳換算</h1>
+            </div>
+            <div class="bg-white p-4 rounded-3xl shadow-sm space-y-4">
+                <h2 class="label-text text-slate-400">1. 選產品</h2>
+                <div id="product-buttons-container" class="grid grid-cols-3 gap-3"></div>
+                <div id="custom_product_div" class="hidden pt-4 border-t border-slate-100">
+                    <div class="flex gap-2">
+                        <input type="text" id="custom_product_input" class="flex-1 p-4 text-2xl border-4 border-slate-200 rounded-2xl focus:border-teal-400 outline-none bg-slate-50" placeholder="產品名稱">
+                        <button onclick="addNewProductAction()" class="bg-teal-600 text-white px-6 py-4 rounded-2xl font-bold text-xl active:scale-95 transition-transform">加入</button>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white p-5 rounded-3xl shadow-sm border-t-8 border-teal-500">
+                <div class="flex gap-4">
+                    <div class="w-2/5 flex flex-col justify-between">
+                        <label class="label-text text-slate-800 text-center mb-2 leading-tight">花多少？</label>
+                        <div class="relative">
+                            <input type="number" id="price_total" class="input-box w-full rounded-2xl border-slate-200 bg-slate-50 focus:border-slate-800 outline-none shadow-inner" placeholder="0">
+                            <span class="absolute right-2 bottom-6 text-xl text-slate-400 font-bold">元</span>
+                        </div>
+                    </div>
+                    <div class="w-px bg-slate-100"></div>
+                    <div class="flex-1 space-y-5">
+                        <div>
+                            <label class="block text-2xl font-bold text-teal-800 mb-2">賣場 (公斤)</label>
+                            <div class="relative">
+                                <input type="number" id="price_kg" class="input-box w-full rounded-2xl border-sky-100 bg-sky-50 text-sky-950 focus:border-sky-300 outline-none shadow-inner" placeholder="0" oninput="calcPrice('kg')">
+                                <span class="absolute right-2 bottom-6 text-xl text-sky-400 font-bold">元</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-2xl font-bold text-amber-900 mb-2">市場 (台斤)</label>
+                            <div class="relative">
+                                <input type="number" id="price_tj" class="input-box w-full rounded-2xl border-amber-100 bg-amber-50 text-amber-950 focus:border-amber-300 outline-none shadow-inner" placeholder="0" oninput="calcPrice('tj')">
+                                <span class="absolute right-2 bottom-6 text-xl text-amber-400 font-bold">元</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-5 pt-4 border-t-2 border-dashed border-slate-100">
+                    <input type="text" id="price_remark" class="remark-box w-full p-4 rounded-xl border-slate-200 bg-slate-50 outline-none shadow-sm" placeholder="寫點什麼？(備註)">
+                </div>
+                <button onclick="saveCurrentRecord()" class="w-full py-8 bg-emerald-600/90 text-white rounded-3xl text-4xl font-black shadow-lg active:scale-95 transition-transform mt-5">💾 儲存紀錄</button>
+            </div>
+            <div class="h-32"></div>
+        </div>
+        <div id="page-history" class="hidden space-y-4">
+            <div class="bg-amber-50 p-5 rounded-3xl text-amber-950 text-center shadow-sm border border-amber-100">
+                <h1 class="huge-text">📋 歷史買菜紀錄</h1>
+            </div>
+            <div id="filter-buttons-container" class="flex flex-wrap gap-2 px-2"></div>
+            <div id="records-list" class="space-y-4 pb-12">
+                <div class="text-center p-12 text-slate-400 text-xl font-bold">讀取中...</div>
+            </div>
+            <div class="h-40"></div>
+        </div>
+    </div>
+    <div class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t-2 border-slate-100 p-4 flex gap-4 shadow-[0_-5px_20px_rgba(0,0,0,0.05)] z-40">
+        <button id="nav-converter" onclick="showPage('converter')" class="nav-btn flex-1 py-7 rounded-3xl text-2xl font-black bg-slate-700 text-white shadow-md active:scale-95">⚖️ 記帳換算</button>
+        <button id="nav-history" onclick="showPage('history')" class="nav-btn flex-1 py-7 rounded-3xl text-2xl font-black bg-slate-100 text-slate-500 active:scale-95">🔎 查看紀錄</button>
+    </div>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('SW 註冊成功');
+                }).catch(err => {
+                    console.log('SW 註冊失敗', err);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
