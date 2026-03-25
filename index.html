@@ -205,11 +205,19 @@
             };
             allRecords.push(newRecord);
             syncToLocalStorage();
+            
+            // 清空輸入
             document.getElementById('price_kg').value = ''; 
             document.getElementById('price_tj').value = '';
             document.getElementById('price_remark').value = ''; 
             document.getElementById('price_total').value = '';
+            
             alertBox("已存好囉！");
+
+            // 儲存成功後，自動跳轉到歷史紀錄頁面
+            setTimeout(() => {
+                window.showPage('history');
+            }, 500); // 延遲 0.5 秒讓長輩看清成功提示
         };
 
         window.deleteRecord = function(id) {
@@ -301,7 +309,7 @@
                 </div>
             </div>
             
-            <!-- 第三框：備註與儲存區 (簡化層級，確保不溢出) -->
+            <!-- 第三框：備註與儲存區 -->
             <div class="bg-white p-2 py-4 rounded-3xl shadow-sm border-t-4 border-orange-500 flex items-center min-h-[105px] overflow-hidden">
                 <div class="side-label">
                     <label>寫點<br>備註</label>
